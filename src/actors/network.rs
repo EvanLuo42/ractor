@@ -1,12 +1,11 @@
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use async_trait::async_trait;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Receiver;
 
 use crate::actors::{Actor, ActorHandle, Message};
 
-type Scenes = Arc<Mutex<Vec<ActorHandle<String>>>>;
+type Scenes = Arc<Vec<ActorHandle<String>>>;
 
 pub struct NetworkActor {
     receiver: Receiver<Message<Scenes>>,
@@ -20,8 +19,6 @@ impl Actor<Scenes> for NetworkActor {
             let message_arc = Arc::clone(&message.data);
             tokio::spawn(async move {
                 message_arc
-                    .lock()
-                    .await
                     .first()
                     .unwrap()
                     .send(Message::new(socket.local_addr().unwrap().to_string()))
