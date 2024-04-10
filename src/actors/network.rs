@@ -1,30 +1,43 @@
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use async_trait::async_trait;
-use log::info;
-use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Receiver;
-use crate::actors::{Actor, Message};
 
-pub struct NetworkActor;
+use crate::actors::{Actor, ActorHandle, Message};
+
+type Scenes = Arc<Mutex<Vec<ActorHandle<String>>>>;
+
+pub struct NetworkActor {
+    receiver: Receiver<Message<Scenes>>,
+}
 
 #[async_trait]
-impl Actor<u8> for NetworkActor {
-    async fn handle(&self, _: Message<u8>) {
-        unreachable!()
-    }
-
-    async fn run(&mut self) {
-        info!("Launching TCP listener on port 6379...");
+impl Actor<Scenes> for NetworkActor {
+    async fn handle(&self, message: Message<Scenes>) {
         let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
-        info!("Listening for TCP request...");
-        while let Ok((mut socket, _)) = listener.accept().await {
-            info!("Received 1 TCP request!");
-            let mut buf = [];
-            println!("{}", socket.read(&mut buf).await.unwrap());
+        while let Ok((socket, _)) = listener.accept().await {
+            let message_arc = Arc::clone(&message.data);
+            tokio::spawn(async move {
+                message_arc
+                    .lock()
+                    .await
+                    .first()
+                    .unwrap()
+                    .send(Message::new(socket.local_addr().unwrap().to_string()))
+                    .await
+                    .unwrap();
+            });
         }
     }
 
-    fn new(_: Receiver<Message<u8>>) -> Self {
-        Self { }
+    async fn run(&mut self) {
+        while let Some(message) = self.receiver.recv().await {
+            self.handle(message).await;
+        }
+    }
+
+    fn new(receiver: Receiver<Message<Scenes>>) -> Self {
+        Self { receiver }
     }
 }
