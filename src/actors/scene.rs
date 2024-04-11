@@ -42,9 +42,10 @@ impl Actor for ScenesActor {
         let mut frame = BytesMut::with_capacity(64);
         packet.read_buf(&mut frame).await.unwrap();
         // TODO: Error handling
-        let data = SelectScene::decode(frame).unwrap();
+        let data = SelectScene::decode(&*frame).unwrap();
+        println!("{:?}", data);
         let handle = self.scenes.get(&data.scene_id).unwrap().new_handle();
-        handle.send(message).await.unwrap()
+        handle.send(message).await.unwrap();
     }
 
     async fn run(&mut self) {
@@ -69,10 +70,6 @@ impl Actor for SceneAActor {
     type Msg = TcpStream;
 
     async fn handle(&self, mut message: crate::actors::Message<Self::Msg>) {
-        let mut packet = BufReader::new(&mut message.data);
-        let mut frame = BytesMut::with_capacity(64);
-        packet.read_buf(&mut frame).await.unwrap();
-        println!("{:?}", frame);
         loop {
 
         }
