@@ -7,10 +7,12 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::mpsc::error::SendError;
 
 #[async_trait]
-pub trait Actor<T>: Send {
-    async fn handle(&self, message: Message<T>);
+pub trait Actor: Send {
+    type Msg;
+
+    async fn handle(&self, message: Message<Self::Msg>);
     async fn run(&mut self);
-    fn new(receiver: Receiver<Message<T>>) -> Self;
+    fn new(receiver: Receiver<Message<Self::Msg>>) -> Self;
 }
 
 pub struct Message<T> {
@@ -29,7 +31,7 @@ pub struct ActorHandle<T> {
 }
 
 impl<T> ActorHandle<T> {
-    pub fn new<A: Actor<T> + 'static>() -> ActorHandle<T> {
+    pub fn new<A: Actor<Msg = T> + 'static>() -> ActorHandle<T> {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = A::new(receiver);
         tokio::spawn(async move { actor.run().await });
