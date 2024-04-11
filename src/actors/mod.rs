@@ -48,6 +48,10 @@ impl<T> ActorHandle<T> {
         Self { sender }
     }
 
+    pub fn from_sender(sender: Sender<Message<T>>) -> ActorHandle<T> {
+        Self { sender }
+    }
+
     pub async fn send(&self, message: Message<T>) -> Result<(), SendError<Message<T>>> {
         self.sender.send(message).await
     }

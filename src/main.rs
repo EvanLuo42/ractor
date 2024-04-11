@@ -2,7 +2,7 @@ use crate::actors::{ActorHandle, Message};
 use crate::actors::network::NetworkActor;
 
 pub mod actors;
-mod protos;
+pub mod protos;
 
 #[tokio::main]
 async fn main() {
