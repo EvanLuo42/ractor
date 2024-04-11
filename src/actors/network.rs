@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use tokio::net::TcpListener;
+use bytes::BytesMut;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::Receiver;
 
 use crate::actors::{Actor, ActorHandle, Message};
@@ -29,5 +30,27 @@ impl Actor for NetworkActor {
 
     fn new(receiver: Receiver<Message<Self::Msg>>) -> Self {
         Self { receiver }
+    }
+}
+
+pub struct Connection {
+    stream: TcpStream,
+    buffer: BytesMut
+}
+
+impl Connection {
+    pub fn new(stream: TcpStream) -> Connection {
+        Connection {
+            stream,
+            buffer: BytesMut::with_capacity(4096)
+        }
+    }
+
+    pub async fn read_frame(&mut self) {
+
+    }
+
+    pub async fn write_frame(&mut self) {
+
     }
 }

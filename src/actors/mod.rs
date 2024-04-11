@@ -1,6 +1,7 @@
 pub mod network;
 pub mod scene;
 
+use std::ops::Deref;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -15,6 +16,7 @@ pub trait Actor: Send {
     fn new(receiver: Receiver<Message<Self::Msg>>) -> Self;
 }
 
+#[derive(Clone)]
 pub struct Message<T> {
     pub data: T
 }
@@ -22,6 +24,14 @@ pub struct Message<T> {
 impl<T> Message<T> {
     pub fn new(data: T) -> Message<T> {
         Self { data }
+    }
+}
+
+impl<T: Clone> Deref for Message<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
     }
 }
 
