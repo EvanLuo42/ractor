@@ -1,14 +1,16 @@
 pub mod network;
 pub mod scene;
 
+use std::fmt::Debug;
 use std::ops::Deref;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::mpsc::error::SendError;
+use tracing::debug;
 
 #[async_trait]
-pub trait Actor: Send {
+pub trait Actor: Send + Debug {
     type Msg;
 
     async fn handle(&self, message: Message<Self::Msg>);
@@ -16,7 +18,7 @@ pub trait Actor: Send {
     fn new(receiver: Receiver<Message<Self::Msg>>) -> Self;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Message<T> {
     pub data: T
 }
@@ -44,7 +46,10 @@ impl<T> ActorHandle<T> {
     pub fn new<A: Actor<Msg = T> + 'static>() -> ActorHandle<T> {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = A::new(receiver);
-        tokio::spawn(async move { actor.run().await });
+        tokio::spawn(async move {
+            debug!("Running actor: {:?}", actor);
+            actor.run().await;
+        });
         Self { sender }
     }
 

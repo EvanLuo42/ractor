@@ -2,6 +2,10 @@ syntax = "proto3";
 
 package scenes;
 
-message SelectScene {
+message SelectSceneRequest {
   uint32 scene_id = 1;
+}
+
+message SelectSceneResponse {
+  bool success = 1;
 }

@@ -1,24 +1,42 @@
 use async_trait::async_trait;
 use bytes::BytesMut;
-use tokio::net::{TcpListener, TcpStream};
+use prost::Message;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc::Receiver;
+use tracing::{error, info, trace};
 
-use crate::actors::{Actor, ActorHandle, Message};
+use crate::actors::{Actor, ActorHandle};
 use crate::actors::scene::ScenesActor;
+use crate::errors::ErrorCode;
+use crate::protos::global::ErrorResponse;
 
+#[derive(Debug)]
 pub struct NetworkActor {
-    receiver: Receiver<Message<String>>,
+    receiver: Receiver<crate::Message<String>>,
 }
 
 #[async_trait]
 impl Actor for NetworkActor {
     type Msg = String;
 
-    async fn handle(&self, _: Message<Self::Msg>) {
+    async fn handle(&self, _: crate::Message<Self::Msg>) {
+        trace!("Creating TcpListener...");
         let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+        trace!("TcpListener created!");
         while let Ok((socket, _)) = listener.accept().await {
+            info!("Received a request from {:?}", match socket.peer_addr() {
+                Ok(addr) => addr,
+                Err(e) => {
+                    error!("{:?}", e);
+                    let mut frame = BytesMut::with_capacity(64);
+                    ErrorResponse {
+                        error_code: ErrorCode::NetworkError as u32
+                    }.encode(&mut frame).unwrap();
+                    return
+                }
+            });
             let scenes_handle = ActorHandle::new::<ScenesActor>();
-            scenes_handle.send(Message::new(socket)).await.unwrap();
+            scenes_handle.send(crate::Message::new(socket)).await.unwrap();
         }
     }
 
@@ -28,29 +46,7 @@ impl Actor for NetworkActor {
         }
     }
 
-    fn new(receiver: Receiver<Message<Self::Msg>>) -> Self {
+    fn new(receiver: Receiver<crate::Message<Self::Msg>>) -> Self {
         Self { receiver }
-    }
-}
-
-pub struct Connection {
-    stream: TcpStream,
-    buffer: BytesMut
-}
-
-impl Connection {
-    pub fn new(stream: TcpStream) -> Connection {
-        Connection {
-            stream,
-            buffer: BytesMut::with_capacity(4096)
-        }
-    }
-
-    pub async fn read_frame(&mut self) {
-
-    }
-
-    pub async fn write_frame(&mut self) {
-
     }
 }

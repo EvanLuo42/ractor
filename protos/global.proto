@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package global;
+
+message ErrorResponse {
+  uint32 error_code = 1;
+}

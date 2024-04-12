@@ -3,34 +3,34 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use bytes::BytesMut;
 use prost::Message;
-use tokio::io::{AsyncReadExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
+use tracing::{debug, error, info, trace};
 
 use crate::actors::{Actor, ActorHandle};
-use crate::protos::scenes::SelectScene;
+use crate::errors::ErrorCode;
+use crate::protos::global::ErrorResponse;
 
-pub enum Scenes {
+use crate::protos::scenes::{SelectSceneRequest, SelectSceneResponse};
+
+#[derive(Debug)]
+pub enum Scene {
     SceneA
 }
 
-impl Scenes {
+impl Scene {
     pub fn new_handle(&self) -> ActorHandle<TcpStream> {
         match self {
-            Scenes::SceneA => {
-                let (sender, receiver) = mpsc::channel(8);
-                let mut actor = SceneAActor::new(receiver);
-                tokio::spawn(async move { actor.run().await });
-                ActorHandle::from_sender(sender)
-            }
+            Scene::SceneA => ActorHandle::new::<SceneAActor>()
         }
     }
 }
 
+#[derive(Debug)]
 pub struct ScenesActor {
     receiver: Receiver<crate::actors::Message<TcpStream>>,
-    scenes: HashMap<u32, Scenes>
+    scenes: HashMap<u32, Scene>
 }
 
 #[async_trait]
@@ -38,14 +38,55 @@ impl Actor for ScenesActor {
     type Msg = TcpStream;
 
     async fn handle(&self, mut message: crate::actors::Message<Self::Msg>) {
-        let mut packet = BufReader::new(&mut message.data);
         let mut frame = BytesMut::with_capacity(64);
-        packet.read_buf(&mut frame).await.unwrap();
-        // TODO: Error handling
-        let data = SelectScene::decode(&*frame).unwrap();
-        println!("{:?}", data);
-        let handle = self.scenes.get(&data.scene_id).unwrap().new_handle();
-        handle.send(message).await.unwrap();
+        info!("Scenes Actor is handling request from {:?}...", match message.data.peer_addr() {
+            Ok(addr) => addr,
+            Err(e) => {
+                error!("{:?}", e);
+                ErrorResponse {
+                    error_code: ErrorCode::NetworkError as u32
+                }.encode(&mut frame).unwrap();
+                return
+            }
+        });
+        trace!("Reading SelectSceneRequest frame from TcpStream...");
+        if let Err(e) = message.data.read_buf(&mut frame).await {
+            error!("{:?}", e);
+            return
+        }
+        trace!("Finished reading SelectSceneRequest!");
+        trace!("Decoding request into struct...");
+        let request = match SelectSceneRequest::decode(&*frame) {
+            Ok(request) => request,
+            Err(e) => {
+                error!("{:?}", e);
+                ErrorResponse {
+                    error_code: ErrorCode::DecodeProtoFailed as u32
+                }.encode(&mut frame).unwrap();
+                return
+            }
+        };
+        trace!("Finished decoding request into struct!");
+        trace!("Finding scene with request...");
+        let handle = match self.scenes.get(&request.scene_id) {
+            None => {
+                error!("Scene not exist!");
+                ErrorResponse {
+                    error_code: ErrorCode::SceneNotExist as u32
+                }.encode(&mut frame).unwrap();
+                return;
+            },
+            Some(scene) => {
+                debug!("Finished finding scene with request!");
+                scene.new_handle()
+            }
+        };
+        if let Err(e) = handle.send(message).await {
+            error!("{:?}", e);
+            ErrorResponse {
+                error_code: ErrorCode::ChannelClosed as u32
+            }.encode(&mut frame).unwrap();
+        }
     }
 
     async fn run(&mut self) {
@@ -56,11 +97,12 @@ impl Actor for ScenesActor {
 
     fn new(receiver: Receiver<crate::actors::Message<Self::Msg>>) -> Self {
         let mut scenes = HashMap::new();
-        scenes.insert(1, Scenes::SceneA);
+        scenes.insert(1, Scene::SceneA);
         Self { receiver, scenes }
     }
 }
 
+#[derive(Debug)]
 pub struct SceneAActor {
     receiver: Receiver<crate::actors::Message<TcpStream>>
 }
@@ -70,9 +112,33 @@ impl Actor for SceneAActor {
     type Msg = TcpStream;
 
     async fn handle(&self, mut message: crate::actors::Message<Self::Msg>) {
-        loop {
+        let mut frame = BytesMut::with_capacity(64);
+        info!("Scene A Actor is handling request from {:?}...", match message.data.peer_addr() {
+            Ok(addr) => addr,
+            Err(e) => {
+                ErrorResponse {
+                    error_code: ErrorCode::NetworkError as u32
+                }.encode(&mut frame).unwrap();
+                error!("{:?}", e);
+                return
+            }
+        });
 
-        }
+        trace!("Encoding SelectSceneResponse to binary...");
+        SelectSceneResponse {
+            success: true,
+        }.encode(&mut frame).unwrap();
+        trace!("Finished encoding SelectSceneResponse to binary...");
+
+        trace!("Writing binary to frame...");
+        message.data.write_buf(&mut frame).await.unwrap();
+        trace!("Finished binary to frame...");
+
+        frame.clear();
+
+        trace!("Reading client request...");
+        message.data.read_buf(&mut frame).await.unwrap();
+        debug!("{:?}", frame);
     }
 
     async fn run(&mut self) {
