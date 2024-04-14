@@ -1,14 +1,11 @@
 use async_trait::async_trait;
-use bytes::BytesMut;
-use prost::Message;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Receiver;
 use tracing::{error, info, trace};
 
 use crate::actors::{Actor, ActorHandle};
 use crate::actors::scene::ScenesActor;
-use crate::errors::ErrorCode;
-use crate::protos::global::ErrorResponse;
+use crate::errors::{ErrorCode, respond_error};
 
 #[derive(Debug)]
 pub struct NetworkActor {
@@ -28,10 +25,7 @@ impl Actor for NetworkActor {
                 Ok(addr) => addr,
                 Err(e) => {
                     error!("{:?}", e);
-                    let mut frame = BytesMut::with_capacity(64);
-                    ErrorResponse {
-                        error_code: ErrorCode::NetworkError as u32
-                    }.encode(&mut frame).unwrap();
+                    respond_error(socket, ErrorCode::NetworkError).await;
                     return
                 }
             });
