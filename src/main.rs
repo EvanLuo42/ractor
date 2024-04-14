@@ -5,6 +5,7 @@ use crate::actors::network::NetworkActor;
 pub mod actors;
 pub mod protos;
 pub mod errors;
+mod configs;
 
 #[tokio::main]
 async fn main() {

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::BytesMut;
@@ -6,9 +7,11 @@ use prost::Message;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Receiver;
+use tokio::time::timeout;
 use tracing::{debug, error, info, trace};
 
 use crate::actors::{Actor, ActorHandle};
+use crate::configs::TIMEOUT;
 use crate::errors::{ErrorCode, respond_error};
 
 use crate::protos::scenes::{SelectSceneRequest, SelectSceneResponse};
@@ -46,8 +49,8 @@ impl Actor for ScenesActor {
             }
         });
         trace!("Reading SelectSceneRequest frame from TcpStream...");
-        let length = match message.data.read_u8().await {
-            Ok(length) => length,
+        let length = match timeout(TIMEOUT, message.data.read_u8()).await {
+            Ok(length) => length.unwrap(),
             Err(e) => {
                 error!("{:?}", e);
                 respond_error(message.data, ErrorCode::DecodeProtoFailed).await;
@@ -55,7 +58,7 @@ impl Actor for ScenesActor {
             }
         };
         let mut frame = vec![0, length];
-        if let Err(e) = message.data.read_exact(&mut frame).await {
+        if let Err(e) = timeout(TIMEOUT, message.data.read_exact(&mut frame)).await {
             error!("{:?}", e);
             respond_error(message.data, ErrorCode::NetworkError).await;
             return
