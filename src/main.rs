@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use sqlx::{Sqlite, SqlitePool};
 use tracing::{info, Level};
 use crate::actors::ActorHandle;
@@ -18,7 +19,7 @@ async fn main() {
     let app_context = AppContext {
         db_pool: SqlitePool::connect("sqlite").await.unwrap()
     };
-    network_handle.send(app_context).await.unwrap();
+    network_handle.send(Arc::new(app_context)).await.unwrap();
     info!("Network actor launched!");
     loop {}
 }

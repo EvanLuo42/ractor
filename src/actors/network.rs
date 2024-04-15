@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use async_trait::async_trait;
 use sqlx::{Database, Pool};
 use tokio::net::TcpListener;
@@ -5,21 +6,22 @@ use tokio::sync::mpsc::Receiver;
 use tracing::{error, info, trace};
 
 use crate::actors::{Actor, ActorHandle};
-use crate::actors::scene::ScenesActor;
+use crate::actors::scene::{ScenesActor, ScenesMessage};
 use crate::errors::{ErrorCode, respond_error};
 
+#[derive(Clone, Debug)]
 pub struct AppContext<DB: Database> {
     pub(crate) db_pool: Pool<DB>
 }
 
 #[derive(Debug)]
 pub struct NetworkActor<DB: Database> {
-    receiver: Receiver<AppContext<DB>>,
+    receiver: Receiver<Arc<AppContext<DB>>>,
 }
 
 #[async_trait]
 impl<DB: Database> Actor for NetworkActor<DB> {
-    type Msg = AppContext<DB>;
+    type Msg = Arc<AppContext<DB>>;
 
     async fn handle(&self, message: Self::Msg) {
         trace!("Creating TcpListener...");
@@ -34,8 +36,12 @@ impl<DB: Database> Actor for NetworkActor<DB> {
                     return
                 }
             });
-            let scenes_handle = ActorHandle::new::<ScenesActor>();
-            scenes_handle.send(socket).await.unwrap();
+            let scenes_handle = ActorHandle::new::<ScenesActor<DB>>();
+            let scenes_message = ScenesMessage {
+                app_context: Arc::clone(&message),
+                stream: socket
+            };
+            scenes_handle.send(scenes_message).await.unwrap();
         }
     }
 

@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::BytesMut;
 use prost::Message;
+use sqlx::Database;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Receiver;
@@ -10,10 +12,17 @@ use tokio::time::timeout;
 use tracing::{debug, error, info, trace};
 
 use crate::actors::{Actor, ActorHandle};
+use crate::actors::network::AppContext;
 use crate::configs::TIMEOUT;
 use crate::errors::{ErrorCode, respond_error};
 
 use crate::protos::scenes::{SelectSceneRequest, SelectSceneResponse};
+
+#[derive(Debug)]
+pub struct ScenesMessage<DB: Database> {
+    pub(crate) app_context: Arc<AppContext<DB>>,
+    pub(crate) stream: TcpStream
+}
 
 #[derive(Debug)]
 pub enum Scene {
@@ -21,45 +30,45 @@ pub enum Scene {
 }
 
 impl Scene {
-    pub fn new_handle(&self) -> ActorHandle<TcpStream> {
+    pub fn new_handle<DB: Database>(&self) -> ActorHandle<SceneMessage<DB>> {
         match self {
-            Scene::SceneA => ActorHandle::new::<SceneAActor>()
+            Scene::SceneA => ActorHandle::new::<SceneAActor<DB>>()
         }
     }
 }
 
 #[derive(Debug)]
-pub struct ScenesActor {
-    receiver: Receiver<TcpStream>,
+pub struct ScenesActor<DB: Database> {
+    receiver: Receiver<ScenesMessage<DB>>,
     scenes: HashMap<u32, Scene>
 }
 
 #[async_trait]
-impl Actor for ScenesActor {
-    type Msg = TcpStream;
+impl<DB: Database> Actor for ScenesActor<DB> {
+    type Msg = ScenesMessage<DB>;
 
     async fn handle(&self, mut message: Self::Msg) {
-        info!("Scenes Actor is handling request from {:?}...", match message.peer_addr() {
+        info!("Scenes Actor is handling request from {:?}...", match message.stream.peer_addr() {
             Ok(addr) => addr,
             Err(e) => {
                 error!("{:?}", e);
-                respond_error(message, ErrorCode::NetworkError).await;
+                respond_error(message.stream, ErrorCode::NetworkError).await;
                 return
             }
         });
         trace!("Reading SelectSceneRequest frame from TcpStream...");
-        let length = match timeout(TIMEOUT, message.read_u8()).await {
+        let length = match timeout(TIMEOUT, message.stream.read_u8()).await {
             Ok(length) => length.unwrap(),
             Err(e) => {
                 error!("{:?}", e);
-                respond_error(message, ErrorCode::DecodeProtoFailed).await;
+                respond_error(message.stream, ErrorCode::DecodeProtoFailed).await;
                 return
             }
         };
         let mut frame = vec![0, length];
-        if let Err(e) = timeout(TIMEOUT, message.read_exact(&mut frame)).await {
+        if let Err(e) = timeout(TIMEOUT, message.stream.read_exact(&mut frame)).await {
             error!("{:?}", e);
-            respond_error(message, ErrorCode::NetworkError).await;
+            respond_error(message.stream, ErrorCode::NetworkError).await;
             return
         }
         trace!("Finished reading SelectSceneRequest!");
@@ -77,7 +86,7 @@ impl Actor for ScenesActor {
         let handle = match self.scenes.get(&request.scene_id) {
             None => {
                 error!("Scene not exist!");
-                respond_error(message, ErrorCode::SceneNotExist).await;
+                respond_error(message.stream, ErrorCode::SceneNotExist).await;
                 return;
             },
             Some(scene) => {
@@ -85,7 +94,11 @@ impl Actor for ScenesActor {
                 scene.new_handle()
             }
         };
-        if let Err(e) = handle.send(message).await {
+        let scene_message = SceneMessage {
+            app_context: Arc::clone(&message.app_context),
+            stream: message.stream
+        };
+        if let Err(e) = handle.send(scene_message).await {
             error!("{:?}", e);
         }
     }
@@ -104,20 +117,26 @@ impl Actor for ScenesActor {
 }
 
 #[derive(Debug)]
-pub struct SceneAActor {
-    receiver: Receiver<TcpStream>
+pub struct SceneMessage<DB: Database> {
+    app_context: Arc<AppContext<DB>>,
+    stream: TcpStream
+}
+
+#[derive(Debug)]
+pub struct SceneAActor<DB: Database> {
+    receiver: Receiver<SceneMessage<DB>>
 }
 
 #[async_trait]
-impl Actor for SceneAActor {
-    type Msg = TcpStream;
+impl<DB: Database> Actor for SceneAActor<DB> {
+    type Msg = SceneMessage<DB>;
 
     async fn handle(&self, mut message: Self::Msg) {
-        info!("Scene A Actor is handling request from {:?}...", match message.peer_addr() {
+        info!("Scene A Actor is handling request from {:?}...", match message.stream.peer_addr() {
             Ok(addr) => addr,
             Err(e) => {
                 error!("{:?}", e);
-                respond_error(message, ErrorCode::NetworkError).await;
+                respond_error(message.stream, ErrorCode::NetworkError).await;
                 return
             }
         });
@@ -133,13 +152,13 @@ impl Actor for SceneAActor {
         trace!("Finished encoding SelectSceneResponse to binary...");
 
         trace!("Writing binary to frame...");
-        message.write_u8(length as u8).await.unwrap();
-        message.write_buf(&mut frame).await.unwrap();
+        message.stream.write_u8(length as u8).await.unwrap();
+        message.stream.write_buf(&mut frame).await.unwrap();
         trace!("Finished binary to frame...");
 
         let mut frame = BytesMut::with_capacity(64);
         trace!("Reading client request...");
-        message.read_buf(&mut frame).await.unwrap();
+        message.stream.read_buf(&mut frame).await.unwrap();
         debug!("{:?}", frame);
     }
 
