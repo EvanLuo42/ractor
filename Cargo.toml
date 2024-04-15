@@ -12,6 +12,7 @@ bytes = "1.6.0"
 prost = "0.12.4"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
+sqlx = { version = "0.7", features = [ "runtime-tokio", "sqlite" ] }
 
 [build-dependencies]
 prost-build = "0.12.4"

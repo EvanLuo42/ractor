@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use sqlx::{Database, Pool};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Receiver;
 use tracing::{error, info, trace};
@@ -7,16 +8,20 @@ use crate::actors::{Actor, ActorHandle};
 use crate::actors::scene::ScenesActor;
 use crate::errors::{ErrorCode, respond_error};
 
+pub struct AppContext<DB: Database> {
+    pub(crate) db_pool: Pool<DB>
+}
+
 #[derive(Debug)]
-pub struct NetworkActor {
-    receiver: Receiver<crate::Message<String>>,
+pub struct NetworkActor<DB: Database> {
+    receiver: Receiver<AppContext<DB>>,
 }
 
 #[async_trait]
-impl Actor for NetworkActor {
-    type Msg = String;
+impl<DB: Database> Actor for NetworkActor<DB> {
+    type Msg = AppContext<DB>;
 
-    async fn handle(&self, _: crate::Message<Self::Msg>) {
+    async fn handle(&self, message: Self::Msg) {
         trace!("Creating TcpListener...");
         let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
         trace!("TcpListener created!");
@@ -30,7 +35,7 @@ impl Actor for NetworkActor {
                 }
             });
             let scenes_handle = ActorHandle::new::<ScenesActor>();
-            scenes_handle.send(crate::Message::new(socket)).await.unwrap();
+            scenes_handle.send(socket).await.unwrap();
         }
     }
 
@@ -40,7 +45,7 @@ impl Actor for NetworkActor {
         }
     }
 
-    fn new(receiver: Receiver<crate::Message<Self::Msg>>) -> Self {
+    fn new(receiver: Receiver<Self::Msg>) -> Self {
         Self { receiver }
     }
 }

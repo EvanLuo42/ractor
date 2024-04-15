@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::BytesMut;
@@ -31,7 +30,7 @@ impl Scene {
 
 #[derive(Debug)]
 pub struct ScenesActor {
-    receiver: Receiver<crate::actors::Message<TcpStream>>,
+    receiver: Receiver<TcpStream>,
     scenes: HashMap<u32, Scene>
 }
 
@@ -39,28 +38,28 @@ pub struct ScenesActor {
 impl Actor for ScenesActor {
     type Msg = TcpStream;
 
-    async fn handle(&self, mut message: crate::actors::Message<Self::Msg>) {
-        info!("Scenes Actor is handling request from {:?}...", match message.data.peer_addr() {
+    async fn handle(&self, mut message: Self::Msg) {
+        info!("Scenes Actor is handling request from {:?}...", match message.peer_addr() {
             Ok(addr) => addr,
             Err(e) => {
                 error!("{:?}", e);
-                respond_error(message.data, ErrorCode::NetworkError).await;
+                respond_error(message, ErrorCode::NetworkError).await;
                 return
             }
         });
         trace!("Reading SelectSceneRequest frame from TcpStream...");
-        let length = match timeout(TIMEOUT, message.data.read_u8()).await {
+        let length = match timeout(TIMEOUT, message.read_u8()).await {
             Ok(length) => length.unwrap(),
             Err(e) => {
                 error!("{:?}", e);
-                respond_error(message.data, ErrorCode::DecodeProtoFailed).await;
+                respond_error(message, ErrorCode::DecodeProtoFailed).await;
                 return
             }
         };
         let mut frame = vec![0, length];
-        if let Err(e) = timeout(TIMEOUT, message.data.read_exact(&mut frame)).await {
+        if let Err(e) = timeout(TIMEOUT, message.read_exact(&mut frame)).await {
             error!("{:?}", e);
-            respond_error(message.data, ErrorCode::NetworkError).await;
+            respond_error(message, ErrorCode::NetworkError).await;
             return
         }
         trace!("Finished reading SelectSceneRequest!");
@@ -78,7 +77,7 @@ impl Actor for ScenesActor {
         let handle = match self.scenes.get(&request.scene_id) {
             None => {
                 error!("Scene not exist!");
-                respond_error(message.data, ErrorCode::SceneNotExist).await;
+                respond_error(message, ErrorCode::SceneNotExist).await;
                 return;
             },
             Some(scene) => {
@@ -97,7 +96,7 @@ impl Actor for ScenesActor {
         }
     }
 
-    fn new(receiver: Receiver<crate::actors::Message<Self::Msg>>) -> Self {
+    fn new(receiver: Receiver<Self::Msg>) -> Self {
         let mut scenes = HashMap::new();
         scenes.insert(1, Scene::SceneA);
         Self { receiver, scenes }
@@ -106,19 +105,19 @@ impl Actor for ScenesActor {
 
 #[derive(Debug)]
 pub struct SceneAActor {
-    receiver: Receiver<crate::actors::Message<TcpStream>>
+    receiver: Receiver<TcpStream>
 }
 
 #[async_trait]
 impl Actor for SceneAActor {
     type Msg = TcpStream;
 
-    async fn handle(&self, mut message: crate::actors::Message<Self::Msg>) {
-        info!("Scene A Actor is handling request from {:?}...", match message.data.peer_addr() {
+    async fn handle(&self, mut message: Self::Msg) {
+        info!("Scene A Actor is handling request from {:?}...", match message.peer_addr() {
             Ok(addr) => addr,
             Err(e) => {
                 error!("{:?}", e);
-                respond_error(message.data, ErrorCode::NetworkError).await;
+                respond_error(message, ErrorCode::NetworkError).await;
                 return
             }
         });
@@ -134,13 +133,13 @@ impl Actor for SceneAActor {
         trace!("Finished encoding SelectSceneResponse to binary...");
 
         trace!("Writing binary to frame...");
-        message.data.write_u8(length as u8).await.unwrap();
-        message.data.write_buf(&mut frame).await.unwrap();
+        message.write_u8(length as u8).await.unwrap();
+        message.write_buf(&mut frame).await.unwrap();
         trace!("Finished binary to frame...");
 
         let mut frame = BytesMut::with_capacity(64);
         trace!("Reading client request...");
-        message.data.read_buf(&mut frame).await.unwrap();
+        message.read_buf(&mut frame).await.unwrap();
         debug!("{:?}", frame);
     }
 
@@ -150,7 +149,7 @@ impl Actor for SceneAActor {
         }
     }
 
-    fn new(receiver: Receiver<crate::actors::Message<Self::Msg>>) -> Self {
+    fn new(receiver: Receiver<Self::Msg>) -> Self {
         Self { receiver }
     }
 }

@@ -2,7 +2,6 @@ pub mod network;
 pub mod scene;
 
 use std::fmt::Debug;
-use std::ops::Deref;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -13,33 +12,13 @@ use tracing::debug;
 pub trait Actor: Send + Debug {
     type Msg;
 
-    async fn handle(&self, message: Message<Self::Msg>);
+    async fn handle(&self, message: Self::Msg);
     async fn run(&mut self);
-    fn new(receiver: Receiver<Message<Self::Msg>>) -> Self;
+    fn new(receiver: Receiver<Self::Msg>) -> Self;
 }
-
-#[derive(Clone, Debug)]
-pub struct Message<T> {
-    pub data: T
-}
-
-impl<T> Message<T> {
-    pub fn new(data: T) -> Message<T> {
-        Self { data }
-    }
-}
-
-impl<T: Clone> Deref for Message<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
 #[derive(Clone)]
 pub struct ActorHandle<T> {
-    sender: Sender<Message<T>>
+    sender: Sender<T>
 }
 
 impl<T> ActorHandle<T> {
@@ -53,11 +32,11 @@ impl<T> ActorHandle<T> {
         Self { sender }
     }
 
-    pub fn from_sender(sender: Sender<Message<T>>) -> ActorHandle<T> {
+    pub fn from_sender(sender: Sender<T>) -> ActorHandle<T> {
         Self { sender }
     }
 
-    pub async fn send(&self, message: Message<T>) -> Result<(), SendError<Message<T>>> {
+    pub async fn send(&self, message: T) -> Result<(), SendError<T>> {
         self.sender.send(message).await
     }
 }
