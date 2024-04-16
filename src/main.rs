@@ -1,18 +1,18 @@
-use std::env;
-use std::sync::Arc;
+use crate::actors::network::NetworkActor;
+use crate::actors::ActorHandle;
+use crate::actors::AppContext;
 use dotenv::dotenv;
 use sqlx::SqlitePool;
+use std::env;
+use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
-use crate::actors::ActorHandle;
-use crate::actors::network::{NetworkActor};
-use crate::actors::AppContext;
 
 pub mod actors;
-pub mod protos;
-pub mod errors;
 pub mod configs;
+pub mod errors;
 pub mod models;
+pub mod protos;
 pub mod query;
 
 #[tokio::main]
@@ -26,8 +26,13 @@ async fn main() {
     info!("Launching network actor...");
     let network_handle = ActorHandle::new::<NetworkActor>();
     let app_context = AppContext {
-        db_pool: SqlitePool::connect(env::var("DATABASE_URL")
-            .unwrap_or("sqlite:db.sqlite3".into()).as_str()).await.unwrap()
+        db_pool: SqlitePool::connect(
+            env::var("DATABASE_URL")
+                .unwrap_or("sqlite:db.sqlite3".into())
+                .as_str(),
+        )
+        .await
+        .unwrap(),
     };
     network_handle.send(Arc::new(app_context)).await.unwrap();
     info!("Network actor launched!");

@@ -10,10 +10,10 @@ use tokio::sync::mpsc::Receiver;
 use tokio::time::timeout;
 use tracing::{debug, error, info};
 
-use crate::actors::{Actor, ActorHandle};
 use crate::actors::AppContext;
+use crate::actors::{Actor, ActorHandle};
 use crate::configs::TIMEOUT;
-use crate::errors::{ErrorCode, respond_error};
+use crate::errors::{respond_error, ErrorCode};
 
 use crate::protos::scenes::{SelectSceneRequest, SelectSceneResponse};
 use crate::query::scenes::get_all_tests;
@@ -21,18 +21,18 @@ use crate::query::scenes::get_all_tests;
 #[derive(Debug)]
 pub struct ScenesMessage {
     pub(crate) app_context: Arc<AppContext>,
-    pub(crate) stream: TcpStream
+    pub(crate) stream: TcpStream,
 }
 
 #[derive(Debug)]
 pub enum Scene {
-    SceneA
+    SceneA,
 }
 
 impl Scene {
     pub fn new_handle(&self) -> ActorHandle<SceneMessage> {
         match self {
-            Scene::SceneA => ActorHandle::new::<SceneAActor>()
+            Scene::SceneA => ActorHandle::new::<SceneAActor>(),
         }
     }
 }
@@ -40,7 +40,7 @@ impl Scene {
 #[derive(Debug)]
 pub struct ScenesActor {
     receiver: Receiver<ScenesMessage>,
-    scenes: HashMap<u32, Scene>
+    scenes: HashMap<u32, Scene>,
 }
 
 #[async_trait]
@@ -48,33 +48,36 @@ impl Actor for ScenesActor {
     type Msg = ScenesMessage;
 
     async fn handle(&self, mut message: Self::Msg) {
-        info!("Scenes Actor is handling request from {:?}...", match message.stream.peer_addr() {
-            Ok(addr) => addr,
-            Err(e) => {
-                error!("{:?}", e);
-                respond_error(message.stream, ErrorCode::NetworkError).await;
-                return
+        info!(
+            "Scenes Actor is handling request from {:?}...",
+            match message.stream.peer_addr() {
+                Ok(addr) => addr,
+                Err(e) => {
+                    error!("{:?}", e);
+                    respond_error(message.stream, ErrorCode::NetworkError).await;
+                    return;
+                }
             }
-        });
+        );
         let length = match timeout(TIMEOUT, message.stream.read_u8()).await {
             Ok(length) => length.unwrap(),
             Err(e) => {
                 error!("{:?}", e);
                 respond_error(message.stream, ErrorCode::DecodeProtoFailed).await;
-                return
+                return;
             }
         };
         let mut frame = vec![0, length];
         if let Err(e) = timeout(TIMEOUT, message.stream.read_exact(&mut frame)).await {
             error!("{:?}", e);
             respond_error(message.stream, ErrorCode::NetworkError).await;
-            return
+            return;
         }
         let request = match SelectSceneRequest::decode(&*frame) {
             Ok(request) => request,
             Err(e) => {
                 error!("{:?}", e);
-                return
+                return;
             }
         };
         debug!("Decoded Result: {:?}", request);
@@ -83,14 +86,12 @@ impl Actor for ScenesActor {
                 error!("Scene not exist!");
                 respond_error(message.stream, ErrorCode::SceneNotExist).await;
                 return;
-            },
-            Some(scene) => {
-                scene.new_handle()
             }
+            Some(scene) => scene.new_handle(),
         };
         let scene_message = SceneMessage {
             app_context: message.app_context,
-            stream: message.stream
+            stream: message.stream,
         };
         if let Err(e) = handle.send(scene_message).await {
             error!("{:?}", e);
@@ -113,12 +114,12 @@ impl Actor for ScenesActor {
 #[derive(Debug)]
 pub struct SceneMessage {
     app_context: Arc<AppContext>,
-    stream: TcpStream
+    stream: TcpStream,
 }
 
 #[derive(Debug)]
 pub struct SceneAActor {
-    receiver: Receiver<SceneMessage>
+    receiver: Receiver<SceneMessage>,
 }
 
 #[async_trait]
@@ -126,18 +127,19 @@ impl Actor for SceneAActor {
     type Msg = SceneMessage;
 
     async fn handle(&self, mut message: Self::Msg) {
-        info!("Scene A Actor is handling request from {:?}...", match message.stream.peer_addr() {
-            Ok(addr) => addr,
-            Err(e) => {
-                error!("{:?}", e);
-                respond_error(message.stream, ErrorCode::NetworkError).await;
-                return
+        info!(
+            "Scene A Actor is handling request from {:?}...",
+            match message.stream.peer_addr() {
+                Ok(addr) => addr,
+                Err(e) => {
+                    error!("{:?}", e);
+                    respond_error(message.stream, ErrorCode::NetworkError).await;
+                    return;
+                }
             }
-        });
+        );
 
-        let response = SelectSceneResponse {
-            success: true,
-        };
+        let response = SelectSceneResponse { success: true };
         let length = response.encoded_len();
         let mut frame = BytesMut::with_capacity(length);
         response.encode(&mut frame).unwrap();
