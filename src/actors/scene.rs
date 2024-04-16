@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::BytesMut;
@@ -19,7 +20,7 @@ use crate::query::scenes::get_all_tests;
 
 #[derive(Debug)]
 pub struct ScenesMessage {
-    pub(crate) app_context: AppContext,
+    pub(crate) app_context: Arc<AppContext>,
     pub(crate) stream: TcpStream
 }
 
@@ -111,7 +112,7 @@ impl Actor for ScenesActor {
 
 #[derive(Debug)]
 pub struct SceneMessage {
-    app_context: AppContext,
+    app_context: Arc<AppContext>,
     stream: TcpStream
 }
 

@@ -1,5 +1,6 @@
 use std::env;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Receiver;
@@ -11,12 +12,12 @@ use crate::errors::{ErrorCode, respond_error};
 
 #[derive(Debug)]
 pub struct NetworkActor {
-    receiver: Receiver<AppContext>,
+    receiver: Receiver<Arc<AppContext>>,
 }
 
 #[async_trait]
 impl Actor for NetworkActor {
-    type Msg = AppContext;
+    type Msg = Arc<AppContext>;
 
     async fn handle(&self, message: Self::Msg) {
         let addr = env::var("HOST_ADDRESS").unwrap_or("127.0.0.1:6379".into());
@@ -34,7 +35,7 @@ impl Actor for NetworkActor {
             });
             let scenes_handle = ActorHandle::new::<ScenesActor>();
             let scenes_message = ScenesMessage {
-                app_context: message.clone(),
+                app_context: Arc::clone(&message),
                 stream: socket
             };
             scenes_handle.send(scenes_message).await.unwrap();
