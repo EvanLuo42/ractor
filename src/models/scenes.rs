@@ -2,6 +2,6 @@ use sqlx::FromRow;
 
 #[derive(FromRow, Debug)]
 pub struct Test {
-    id: u32,
-    name: String
+    pub id: u32,
+    pub name: String
 }

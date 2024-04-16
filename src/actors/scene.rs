@@ -3,18 +3,16 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use bytes::BytesMut;
 use prost::Message;
-use sqlx::{query, query_as, Sqlite};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Receiver;
 use tokio::time::timeout;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info};
 
 use crate::actors::{Actor, ActorHandle};
 use crate::actors::network::AppContext;
 use crate::configs::TIMEOUT;
 use crate::errors::{ErrorCode, respond_error};
-use crate::models::scenes::Test;
 
 use crate::protos::scenes::{SelectSceneRequest, SelectSceneResponse};
 use crate::query::scenes::get_all_tests;

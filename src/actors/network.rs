@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use sqlx::{Pool, Sqlite};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Receiver;
-use tracing::{error, info, trace};
+use tracing::{error, info};
 
 use crate::actors::{Actor, ActorHandle};
 use crate::actors::scene::{ScenesActor, ScenesMessage};
