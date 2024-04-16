@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::env;
+use std::net::SocketAddr;
 use async_trait::async_trait;
-use sqlx::{Database, Pool};
+use sqlx::{Pool, Sqlite};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Receiver;
 use tracing::{error, info, trace};
@@ -10,23 +11,24 @@ use crate::actors::scene::{ScenesActor, ScenesMessage};
 use crate::errors::{ErrorCode, respond_error};
 
 #[derive(Clone, Debug)]
-pub struct AppContext<DB: Database> {
-    pub(crate) db_pool: Pool<DB>
+pub struct AppContext {
+    pub(crate) db_pool: Pool<Sqlite>
 }
 
 #[derive(Debug)]
-pub struct NetworkActor<DB: Database> {
-    receiver: Receiver<Arc<AppContext<DB>>>,
+pub struct NetworkActor {
+    receiver: Receiver<AppContext>,
 }
 
 #[async_trait]
-impl<DB: Database> Actor for NetworkActor<DB> {
-    type Msg = Arc<AppContext<DB>>;
+impl Actor for NetworkActor {
+    type Msg = AppContext;
 
     async fn handle(&self, message: Self::Msg) {
-        trace!("Creating TcpListener...");
-        let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
-        trace!("TcpListener created!");
+        let addr = env::var("HOST_ADDRESS").unwrap_or("127.0.0.1:6379".into());
+        let addr: SocketAddr = addr.parse().expect("Invalid host address!");
+        let listener = TcpListener::bind(addr).await.unwrap();
+        info!("Created TcpListener on {}", addr);
         while let Ok((socket, _)) = listener.accept().await {
             info!("Received a request from {:?}", match socket.peer_addr() {
                 Ok(addr) => addr,
@@ -36,9 +38,9 @@ impl<DB: Database> Actor for NetworkActor<DB> {
                     return
                 }
             });
-            let scenes_handle = ActorHandle::new::<ScenesActor<DB>>();
+            let scenes_handle = ActorHandle::new::<ScenesActor>();
             let scenes_message = ScenesMessage {
-                app_context: Arc::clone(&message),
+                app_context: message.clone(),
                 stream: socket
             };
             scenes_handle.send(scenes_message).await.unwrap();

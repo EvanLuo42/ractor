@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::BytesMut;
 use prost::Message;
-use sqlx::Database;
+use sqlx::{query, query_as, Sqlite};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Receiver;
@@ -15,12 +14,14 @@ use crate::actors::{Actor, ActorHandle};
 use crate::actors::network::AppContext;
 use crate::configs::TIMEOUT;
 use crate::errors::{ErrorCode, respond_error};
+use crate::models::scenes::Test;
 
 use crate::protos::scenes::{SelectSceneRequest, SelectSceneResponse};
+use crate::query::scenes::get_all_tests;
 
 #[derive(Debug)]
-pub struct ScenesMessage<DB: Database> {
-    pub(crate) app_context: Arc<AppContext<DB>>,
+pub struct ScenesMessage {
+    pub(crate) app_context: AppContext,
     pub(crate) stream: TcpStream
 }
 
@@ -30,22 +31,22 @@ pub enum Scene {
 }
 
 impl Scene {
-    pub fn new_handle<DB: Database>(&self) -> ActorHandle<SceneMessage<DB>> {
+    pub fn new_handle(&self) -> ActorHandle<SceneMessage> {
         match self {
-            Scene::SceneA => ActorHandle::new::<SceneAActor<DB>>()
+            Scene::SceneA => ActorHandle::new::<SceneAActor>()
         }
     }
 }
 
 #[derive(Debug)]
-pub struct ScenesActor<DB: Database> {
-    receiver: Receiver<ScenesMessage<DB>>,
+pub struct ScenesActor {
+    receiver: Receiver<ScenesMessage>,
     scenes: HashMap<u32, Scene>
 }
 
 #[async_trait]
-impl<DB: Database> Actor for ScenesActor<DB> {
-    type Msg = ScenesMessage<DB>;
+impl Actor for ScenesActor {
+    type Msg = ScenesMessage;
 
     async fn handle(&self, mut message: Self::Msg) {
         info!("Scenes Actor is handling request from {:?}...", match message.stream.peer_addr() {
@@ -56,7 +57,6 @@ impl<DB: Database> Actor for ScenesActor<DB> {
                 return
             }
         });
-        trace!("Reading SelectSceneRequest frame from TcpStream...");
         let length = match timeout(TIMEOUT, message.stream.read_u8()).await {
             Ok(length) => length.unwrap(),
             Err(e) => {
@@ -71,8 +71,6 @@ impl<DB: Database> Actor for ScenesActor<DB> {
             respond_error(message.stream, ErrorCode::NetworkError).await;
             return
         }
-        trace!("Finished reading SelectSceneRequest!");
-        trace!("Decoding request into struct...");
         let request = match SelectSceneRequest::decode(&*frame) {
             Ok(request) => request,
             Err(e) => {
@@ -81,8 +79,6 @@ impl<DB: Database> Actor for ScenesActor<DB> {
             }
         };
         debug!("Decoded Result: {:?}", request);
-        trace!("Finished decoding request into struct!");
-        trace!("Finding scene with request...");
         let handle = match self.scenes.get(&request.scene_id) {
             None => {
                 error!("Scene not exist!");
@@ -90,12 +86,11 @@ impl<DB: Database> Actor for ScenesActor<DB> {
                 return;
             },
             Some(scene) => {
-                debug!("Finished finding scene with request!");
                 scene.new_handle()
             }
         };
         let scene_message = SceneMessage {
-            app_context: Arc::clone(&message.app_context),
+            app_context: message.app_context,
             stream: message.stream
         };
         if let Err(e) = handle.send(scene_message).await {
@@ -117,19 +112,19 @@ impl<DB: Database> Actor for ScenesActor<DB> {
 }
 
 #[derive(Debug)]
-pub struct SceneMessage<DB: Database> {
-    app_context: Arc<AppContext<DB>>,
+pub struct SceneMessage {
+    app_context: AppContext,
     stream: TcpStream
 }
 
 #[derive(Debug)]
-pub struct SceneAActor<DB: Database> {
-    receiver: Receiver<SceneMessage<DB>>
+pub struct SceneAActor {
+    receiver: Receiver<SceneMessage>
 }
 
 #[async_trait]
-impl<DB: Database> Actor for SceneAActor<DB> {
-    type Msg = SceneMessage<DB>;
+impl Actor for SceneAActor {
+    type Msg = SceneMessage;
 
     async fn handle(&self, mut message: Self::Msg) {
         info!("Scene A Actor is handling request from {:?}...", match message.stream.peer_addr() {
@@ -141,23 +136,20 @@ impl<DB: Database> Actor for SceneAActor<DB> {
             }
         });
 
-        trace!("Encoding SelectSceneResponse to binary...");
         let response = SelectSceneResponse {
             success: true,
         };
         let length = response.encoded_len();
         let mut frame = BytesMut::with_capacity(length);
         response.encode(&mut frame).unwrap();
+        debug!("Encoded Response: {:?}", response);
 
-        trace!("Finished encoding SelectSceneResponse to binary...");
-
-        trace!("Writing binary to frame...");
         message.stream.write_u8(length as u8).await.unwrap();
         message.stream.write_buf(&mut frame).await.unwrap();
-        trace!("Finished binary to frame...");
+        let tests = get_all_tests(&message.app_context.db_pool).await.unwrap();
+        debug!("{:?}", tests);
 
         let mut frame = BytesMut::with_capacity(64);
-        trace!("Reading client request...");
         message.stream.read_buf(&mut frame).await.unwrap();
         debug!("{:?}", frame);
     }
