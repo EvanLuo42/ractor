@@ -10,7 +10,7 @@ use tokio::time::timeout;
 use tracing::{debug, error, info};
 
 use crate::actors::{Actor, ActorHandle};
-use crate::actors::network::AppContext;
+use crate::actors::AppContext;
 use crate::configs::TIMEOUT;
 use crate::errors::{ErrorCode, respond_error};
 

@@ -3,7 +3,8 @@ use dotenv::dotenv;
 use sqlx::SqlitePool;
 use tracing::info;
 use crate::actors::ActorHandle;
-use crate::actors::network::{AppContext, NetworkActor};
+use crate::actors::network::{NetworkActor};
+use crate::actors::AppContext;
 
 pub mod actors;
 pub mod protos;

@@ -1,19 +1,13 @@
 use std::env;
 use std::net::SocketAddr;
 use async_trait::async_trait;
-use sqlx::{Pool, Sqlite};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Receiver;
 use tracing::{error, info};
 
-use crate::actors::{Actor, ActorHandle};
+use crate::actors::{Actor, ActorHandle, AppContext};
 use crate::actors::scene::{ScenesActor, ScenesMessage};
 use crate::errors::{ErrorCode, respond_error};
-
-#[derive(Clone, Debug)]
-pub struct AppContext {
-    pub(crate) db_pool: Pool<Sqlite>
-}
 
 #[derive(Debug)]
 pub struct NetworkActor {

@@ -3,6 +3,7 @@ pub mod scene;
 
 use std::fmt::Debug;
 use async_trait::async_trait;
+use sqlx::{Pool, Sqlite};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::mpsc::error::SendError;
@@ -16,6 +17,7 @@ pub trait Actor: Send + Debug {
     async fn run(&mut self);
     fn new(receiver: Receiver<Self::Msg>) -> Self;
 }
+
 #[derive(Clone)]
 pub struct ActorHandle<T> {
     sender: Sender<T>
@@ -39,4 +41,9 @@ impl<T> ActorHandle<T> {
     pub async fn send(&self, message: T) -> Result<(), SendError<T>> {
         self.sender.send(message).await
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct AppContext {
+    pub db_pool: Pool<Sqlite>
 }
